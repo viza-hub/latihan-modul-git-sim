@@ -1,0 +1,419 @@
+---
+title: "SIM_CM1_C_M0725055"
+author: "Viza Kiswara"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    css: style.css
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    fig_width: 9
+    fig_height: 6
+    fig_align: center
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "100%"
+)
+```
+
+
+<div class="report-header">
+<h1>Analisis dan Visualisasi Database Sakila</h1>
+<p>Kategori Film, Tren Rental, dan Analisis Statistik Inferensial</p>
+<br>
+<p><strong>Viza Kiswara</strong> | M0725055 | Kelas C</p>
+<p>Program Studi Statistika<br>Universitas Sebelas Maret<br>Sistem Informasi Manajemen</p>
+<p>`r format(Sys.Date(), '%d %B %Y')`</p>
+</div>
+<hr>
+
+
+# Pendahuluan
+<div class="insight-card">
+Database **Sakila** merupakan *sample database* MySQL yang merepresentasikan sistem rental DVD.  
+Laporan ini bertujuan menganalisis kategori film dan tren rental menggunakan visualisasi data serta analisis statistik inferensial.
+
+Fokus analisis meliputi: <br>
+1. **Kategori Film** <br>
+2. **Tren Rental** <br>
+3. **Analisis Statistik Inferensial**
+</div>
+<hr>
+
+# Koneksi Database MySQL {#koneksi}
+## Load Library
+```{r load-library}
+# Library utama
+library(DBI)          # Koneksi & query database
+library(odbc)         # Driver ODBC untuk MySQL
+library(dplyr)        # Manipulasi data
+library(tidyr)        # Tidy data
+library(ggplot2)      # Visualisasi data
+library(scales)       # Format sumbu (dollar, comma)
+library(knitr)        # Render tabel
+library(kableExtra)   # Styling tabel
+library(lubridate)    # Manipulasi tanggal & waktu
+library(forcats)      # Manipulasi faktor
+library(gridExtra)    # Gabungkan beberapa plot
+```
+
+## Membuat Koneksi ke MySQL
+<div class="callout info">
+Pastikan database Sakila dan MySQL ODBC Connector sudah terpasang sebelum menjalankan kode berikut.
+</div>
+```{r koneksi}
+# Koneksi MySQL
+consak <- dbConnect(odbc(),
+          Driver   = "MySQL ODBC 8.0 ANSI Driver",
+          Server   = "127.0.0.1",
+          Database = "sakila",
+          UID      = "root",
+          PWD      = "WJ28@krhps",
+          Port     = 3306
+)
+
+# Menampilkan daftar tabel
+tabel_sakila <- dbGetQuery(consak, "SHOW FULL TABLES")
+tabel_sakila
+```
+
+## Ringkasan Database
+```{r ringkasan-db}
+ringkasan <- data.frame(
+  Keterangan = c(
+    "Total Film",
+    "Total Pelanggan",
+    "Total Transaksi",
+    "Total Revenue"
+  ),
+  Nilai = c(
+    dbGetQuery(consak, "SELECT COUNT(*) AS n FROM film")$n,
+    dbGetQuery(consak, "SELECT COUNT(*) AS n FROM customer")$n,
+    dbGetQuery(consak, "SELECT COUNT(*) AS n FROM payment")$n,
+    round(dbGetQuery(consak, "SELECT SUM(amount) AS total FROM payment")$total, 2)
+  )
+)
+kable(
+  ringkasan,
+  caption = "Ringkasan Database Sakila"
+)
+```
+<hr>
+
+# Insight 1: Kategori Film {#insight1}
+## Deskripsi Insight
+Analisis ini dilakukan untuk melihat: <br>
+1. Kategori film yang paling sering dirental <br>
+2. Kategori dengan revenue tertinggi <br>
+3. Hubungan antara jumlah rental dan revenue
+
+## Query SQL dan Analisis Data (Poin 1)
+```{r query-kategori}
+query_kategori <- "
+SELECT
+  c.name AS category,
+  COUNT(DISTINCT r.rental_id) AS total_rental,
+  SUM(p.amount) AS total_revenue,
+  AVG(f.length) AS avg_length,
+  AVG(f.rental_rate) AS avg_rate
+FROM category c
+JOIN film_category fc ON c.category_id = fc.category_id
+JOIN film f ON fc.film_id = f.film_id
+JOIN inventory i ON f.film_id = i.film_id
+JOIN rental r ON i.inventory_id = r.inventory_id
+JOIN payment p ON r.rental_id = p.rental_id
+GROUP BY c.name
+ORDER BY total_revenue DESC
+"
+cat_summary <- dbGetQuery(consak, query_kategori)
+kable(
+  cat_summary,
+  caption = "Ringkasan Kategori Film"
+)
+```
+Query di atas digunakan untuk menghitung jumlah rental, total revenue, rata-rata durasi film, dan rata-rata harga sewa pada setiap kategori film.
+
+## Visualisasi Data (Poin 2)
+```{r viz-revenue-kategori}
+cat_summary |>
+  mutate(category = fct_reorder(category, total_revenue)) |>
+  ggplot(aes(
+    x = total_revenue,
+    y = category,
+    fill = total_revenue
+  )) +
+  geom_col(show.legend = FALSE) +
+  labs(
+    title = "Total Revenue per Kategori Film",
+    x = "Total Revenue",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+Visualisasi digunakan untuk membandingkan total revenue pada setiap kategori film sehingga kategori dengan pendapatan tertinggi dapat terlihat dengan lebih jelas.
+
+## Visualisasi Data (Poin 3)
+```{r viz-scatter-kategori}
+ggplot(
+  cat_summary,
+  aes(
+    x = total_rental,
+    y = total_revenue
+  )
+) +
+  geom_point(size = 4, color = "#4f46e5") +
+  geom_text(
+    aes(label = category),
+    vjust = -1,
+    size = 3
+  ) +
+  labs(
+    title = "Hubungan Jumlah Rental dan Revenue",
+    x = "Jumlah Rental",
+    y = "Total Revenue"
+  ) +
+  theme_minimal()
+```
+Visualisasi digunakan untuk melihat hubungan antara jumlah rental dan total revenue pada setiap kategori film.
+
+## Interpretasi
+<p>Berdasarkan hasil analisis, kategori Sports menjadi kategori dengan performa terbaik karena memiliki jumlah rental dan total revenue tertinggi. Hal ini menunjukkan bahwa film kategori Sports paling sering dirental sekaligus paling besar kontribusinya terhadap pendapatan.</p>
+<p>Kategori Sci-Fi, Animation, dan Drama juga termasuk kategori yang cukup diminati karena memiliki revenue dan jumlah rental yang tinggi. Sebaliknya, kategori seperti Music, Travel, dan Horror memiliki performa lebih rendah dibanding kategori lainnya.</p>
+<p>Dari visualisasi scatter plot terlihat bahwa terdapat hubungan positif antara jumlah rental dan total revenue. Semakin banyak suatu kategori dirental, maka revenue yang dihasilkan juga cenderung meningkat.</p>
+<p>Selain itu, kategori dengan revenue tinggi tidak selalu memiliki rata-rata durasi film paling panjang. Hal ini menunjukkan bahwa pendapatan lebih dipengaruhi oleh tingkat popularitas dan frekuensi rental dibanding durasi film.</p>
+
+# Insight 2: Tren Rental {#insight2}
+## Deskripsi Insight
+Analisis ini dilakukan untuk melihat: <br>
+1. Bagaimana pola rental berubah dari bulan ke bulan?<br>
+2. Hari apa yang paling ramai?<br>
+3. Berapa rata-rata durasi pelanggan menyewa film?
+
+## Rumus Rata-rata Durasi Rental
+$$
+\bar{D} = \frac{1}{n} \sum_{i=1}^{n} (D_i)
+$$
+dengan:
+$$
+D_i = \text{return date}_i - \text{rental date}_i
+$$
+Dimana $D_i$ dihitung dalam satuan hari.
+
+## Query SQL dan Analisis Data (Poin 1)
+```{r} 
+query_bulanan <- "
+  SELECT
+    DATE_FORMAT(p.payment_date, '%Y-%m-01') AS bulan,
+    COUNT(DISTINCT r.rental_id)             AS total_rental,
+    SUM(p.amount)                           AS total_revenue
+  FROM payment p
+  JOIN rental r ON p.rental_id = r.rental_id
+  GROUP BY DATE_FORMAT(p.payment_date, '%Y-%m-01')
+  ORDER BY bulan
+"
+tren_bulanan <- dbGetQuery(consak, query_bulanan)
+tren_bulanan$bulan <- as.Date(tren_bulanan$bulan)
+kable(
+  tren_bulanan,
+  caption = "Ringkasan Tren Rental Bulanan"
+)
+```
+Query di atas digunakan untuk melihat jumlah rental dan total revenue setiap bulan.
+
+## Visualisasi Data (Poin 1)
+```{r, fig.height=5.5}
+ggplot(tren_bulanan, aes(x = bulan, y = total_rental, group = 1)) +
+  geom_line(color = "#2563eb", linewidth = 1.2) +
+  geom_point(color = "#2563eb", size = 3) +
+  geom_smooth(method = "loess", se = FALSE, linetype = "dashed",
+              color = "#dc2626") +
+  scale_x_date(date_labels = "%b %Y") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Tren Jumlah Rental Bulanan",
+    x = "Bulan",
+    y = "Jumlah Rental"
+  ) +
+  theme_minimal()
+```
+Visualisasi ini menunjukkan perubahan jumlah rental dari bulan ke bulan serta kecenderungan trennya.
+
+## Query SQL dan Analisis Data (Poin 2)
+```{r}
+query_heatmap <- "
+  SELECT
+    MONTH(rental_date)   AS bulan,
+    DAYNAME(rental_date) AS hari,
+    COUNT(rental_id)     AS total_rental
+  FROM rental
+  GROUP BY MONTH(rental_date), DAYNAME(rental_date)
+  ORDER BY bulan
+"
+heatmap_data <- dbGetQuery(consak, query_heatmap)
+heatmap_data$hari <- factor(
+  heatmap_data$hari,
+  levels = c("Monday","Tuesday","Wednesday","Thursday",
+             "Friday","Saturday","Sunday")
+)
+kable(
+  head(heatmap_data),
+  caption = "Contoh Data Pola Rental per Hari dan Bulan"
+)
+```
+Query ini digunakan untuk melihat pola rental per hari dan bulan.
+
+## Visualisasi Data (Poin 2)
+```{r, fig.height=4.5}
+ggplot(heatmap_data,
+       aes(x = factor(bulan), y = hari, fill = total_rental)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = total_rental), size = 3, color = "white") +
+  scale_fill_gradient(low = "#bfdbfe", high = "#1d4ed8") +
+  scale_x_discrete(labels = c("Jan","Feb","Mar","Apr","Mei","Jun",
+                             "Jul","Agu","Sep","Okt","Nov","Des")) +
+  labs(
+    title = "Pola Rental Berdasarkan Hari dan Bulan",
+    x = "Bulan",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+Visualisasi ini memperlihatkan hari-hari dengan aktivitas rental tertinggi.
+
+## Query SQL dan Analisis Data (poin 3)
+```{r}
+query_durasi <- "
+  SELECT
+    TIMESTAMPDIFF(DAY, rental_date, return_date) AS durasi_hari
+  FROM rental
+  WHERE return_date IS NOT NULL
+"
+durasi_data <- dbGetQuery(consak, query_durasi)
+avg_dur <- mean(durasi_data$durasi_hari)
+med_dur <- median(durasi_data$durasi_hari)
+kable(
+  data.frame(
+    mean = avg_dur,
+    median = med_dur
+  ),
+  caption = "Rata-rata dan Median Durasi Rental"
+)
+```
+Query ini digunakan untuk menghitung rata-rata (mean) dan median durasi rental.
+
+## Visualisasi Data (Poin 3)
+```{r, fig.height=4.5}
+ggplot(durasi_data, aes(x = durasi_hari)) +
+  geom_histogram(binwidth = 1, fill = "#7c3aed", color = "white") +
+  geom_vline(xintercept = avg_dur, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = med_dur, linetype = "dashed", color = "green") +
+  labs(
+    title = "Distribusi Durasi Rental Film",
+    subtitle = "Garis merah = mean | Garis hijau = median",
+    x = "Durasi (Hari)",
+    y = "Frekuensi"
+  ) +
+  theme_minimal()
+```
+Visualisasi ini menunjukkan sebaran durasi rental film serta perbandingan antara rata-rata dan median.
+  
+## Interpretasi
+<p>Berdasarkan analisis tren bulanan, jumlah rental mengalami peningkatan signifikan dari bulan Mei hingga Juli 2005, dengan puncak tertinggi terjadi pada Juli 2005 sebesar 6.709 transaksi. Setelah periode puncak tersebut, tren rental menunjukkan penurunan yang konsisten hingga Februari 2006 dengan hanya 182 transaksi. Pola ini mengindikasikan adanya musiman (seasonality) yang kuat, di mana pertengahan tahun menjadi periode paling aktif dalam aktivitas rental film.</p>
+<p>Dari pola rental berdasarkan hari dan bulan, terlihat bahwa bulan April dan Mei merupakan bulan dengan aktivitas rental tertinggi di hampir seluruh hari dalam seminggu. Hari Senin dan Selasa pada bulan Mei mencatat angka rental tertinggi masing-masing sebesar 1.297 dan 1.264, menunjukkan bahwa awal pekan justru menjadi hari tersibuk. Sebaliknya, bulan Januari tercatat sebagai bulan dengan aktivitas rental paling rendah di semua hari, dengan rentang hanya 137–182 transaksi per hari.</p>
+<p>Dari distribusi durasi rental, sebagian besar pelanggan menyewa film selama 3 hingga 7 hari, dengan frekuensi tertinggi berada di kisaran 4–6 hari. Nilai mean dan median yang berdekatan (keduanya mendekati 5 hari) menunjukkan bahwa distribusi durasi rental relatif simetris dan tidak terlalu dipengaruhi oleh nilai ekstrem. Hal ini mengindikasikan bahwa kebijakan durasi rental yang berlaku sudah sesuai dengan kebiasaan pelanggan, di mana mayoritas mengembalikan film dalam waktu sekitar satu minggu.</p>
+
+# Insight 3: Analisis Statistik Inferensial {#insight3}
+## Deskripsi Insight
+Analisis ini dilakukan untuk melihat: <br>
+1. Apakah rata-rata spending pelanggan aktif berbeda signifikan dengan pelanggan tidak aktif?
+
+## Hipotesis (Poin 1)
+$$H_0: \mu_{\text{aktif}} = \mu_{\text{tidak aktif}}$$
+$$H_1: \mu_{\text{aktif}} \neq \mu_{\text{tidak aktif}}$$
+
+$$t = \frac{\bar{X}_{\text{aktif}} - \bar{X}_{\text{tidak aktif}}}{\sqrt{\dfrac{s_{\text{aktif}}^2}{n_{\text{aktif}}} + \dfrac{s_{\text{tidak aktif}}^2}{n_{\text{tidak aktif}}}}}$$
+Tolak $H_0$ jika $p\text{-value} < \alpha = 0{,}05$
+
+## Query SQL dan Persiapan Data
+```{r query-cust-summary}
+query_cust <- "
+  SELECT
+    c.customer_id,
+    c.active,
+    COUNT(DISTINCT r.rental_id) AS total_rental,
+    SUM(p.amount)               AS total_spending,
+    AVG(p.amount)               AS avg_spending
+  FROM customer c
+  JOIN rental r  ON c.customer_id = r.customer_id
+  JOIN payment p ON r.rental_id   = p.rental_id
+  GROUP BY c.customer_id, c.active
+"
+cust_summary <- dbGetQuery(consak, query_cust)
+kable(
+  head(cust_summary),
+  caption = "Contoh Data Ringkasan Pelanggan"
+)
+```
+Query di atas digunakan untuk membuat ringkasan data per pelanggan yang mencakup status keaktifan, jumlah rental, total spending, dan rata-rata spending per transaksi.
+
+## Query SQL dan Analisis Data (Poin 1)
+```{r uji-t}
+data_uji <- cust_summary |>
+  filter(!is.na(active), !is.na(total_spending))
+
+data_uji |>
+  group_by(Status = ifelse(active == 1, "Aktif", "Tidak Aktif")) |>
+  summarise(
+    n    = n(),
+    Mean = round(mean(total_spending, na.rm = TRUE), 2),
+    SD   = round(sd(total_spending,   na.rm = TRUE), 2),
+    Min  = round(min(total_spending,  na.rm = TRUE), 2),
+    Max  = round(max(total_spending,  na.rm = TRUE), 2)
+  ) |>
+  kable(caption = "Statistik Deskriptif: Aktif vs Tidak Aktif")
+
+hasil_uji <- t.test(total_spending ~ active, data = data_uji, var.equal = FALSE)
+print(hasil_uji)
+```
+Query di atas digunakan untuk menghitung statistik deskriptif spending per kelompok pelanggan dan menjalankan Welch t-test untuk menguji perbedaan rata-rata spending antara pelanggan aktif dan tidak aktif.
+
+## Visualisasi Data (Poin 1)
+```{r viz-uji-t, fig.height=4.5}
+data_uji |>
+  mutate(Status = ifelse(active == 1, "Aktif", "Tidak Aktif")) |>
+  ggplot(aes(x = total_spending, fill = Status)) +
+  geom_histogram(binwidth = 5, alpha = 0.75, position = "identity", color = "white") +
+  facet_wrap(~ Status, ncol = 2, scales = "free_y") +
+  scale_fill_manual(values = c("Aktif" = "#2563eb", "Tidak Aktif" = "#dc2626")) +
+  scale_x_continuous(labels = dollar_format(prefix = "$")) +
+  labs(
+    title    = "Distribusi Spending: Pelanggan Aktif vs Tidak Aktif",
+    subtitle = paste0("Welch t-test: t = ", round(hasil_uji$statistic, 3),
+                      " | p-value = ", round(hasil_uji$p.value, 4)),
+    x = "Total Spending (USD)",
+    y = "Frekuensi"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    strip.text      = element_text(face = "bold", size = 12),
+    plot.title      = element_text(face = "bold", size = 14),
+    plot.subtitle   = element_text(color = "#64748b")
+  )
+```
+Visualisasi ini digunakan untuk membandingkan distribusi total spending antara pelanggan aktif dan tidak aktif serta menampilkan hasil uji t secara langsung pada judul grafik.
+
+## Interpretasi
+<p>Berdasarkan hasil Welch t-test, diperoleh nilai t = -0,293 dengan p-value = 0,7735. Karena p-value = 0,7735 > α = 0,05, maka H₀ gagal ditolak. Artinya, tidak terdapat perbedaan yang signifikan secara statistik antara rata-rata total spending pelanggan aktif dan pelanggan tidak aktif pada tingkat kepercayaan 95%.</p>
+<p>Pelanggan aktif memiliki rata-rata spending sebesar $112,58 dengan standar deviasi $25,39, sedangkan pelanggan tidak aktif memiliki rata-rata $110,66 dengan standar deviasi $24,98. Selisih keduanya hanya sekitar $1,92, yang secara statistik tidak cukup untuk menyimpulkan adanya perbedaan antar kelompok.</p>
+<p>Dari visualisasi histogram, distribusi spending pelanggan aktif membentuk pola mendekati normal dengan puncak di kisaran $100–$125. Sementara itu, distribusi pelanggan tidak aktif terlihat lebih menyebar namun dengan frekuensi yang jauh lebih kecil, konsisten dengan jumlah pelanggan tidak aktif yang hanya 15 dari total 599 pelanggan.</p>
